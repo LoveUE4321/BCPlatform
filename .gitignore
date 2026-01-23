@@ -1,0 +1,12 @@
+x64
+ipch
+
+.vscode
+*.vs
+*.VC.db
+*.opensdf
+*.opendb
+*.sdf
+*.xcodeproj
+*.xcworkspace
+*.pdb
