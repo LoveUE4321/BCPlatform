@@ -18,6 +18,7 @@
 #include <iostream>
 #include <functional>
 
+#include "JsonMessage.h"
 #pragma comment(lib, "Ws2_32.lib")
 
 class UDPClient
@@ -66,6 +67,7 @@ private:
     void ProcessReceivedMessage(const std::string& message);
     void HandlePong();
     void HandleConnectAck(const std::string& message);
+    bool HandleReceivedMessage(const JSONMessage& msg);
 
     // 连接管理
     bool EstablishConnection();

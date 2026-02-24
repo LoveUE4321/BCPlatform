@@ -517,6 +517,11 @@ void UDPServer::RemoveInactiveClients(int timeoutSeconds)
 
             messageCallback_("Remove Inactive Client: ", pair.second.ip, pair.second.port);
 
+            if (clientCallback_)
+            {
+                clientCallback_(pair.second.ip, pair.second.port, false);
+            }
+
         }
     }
 

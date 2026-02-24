@@ -12,6 +12,7 @@
 #include "UDPServer.h"
 
 #define MAX_LOADSTRING 100
+#define SERVER_PORT 8899
 
 // Global Variables:
 HINSTANCE hInst;                                // current instance
@@ -64,7 +65,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     }
 
     // 创建UDP服务器
-    g_server = new UDPServer(9091);
+    g_server = new UDPServer(SERVER_PORT);
     g_server->SetMessageCallback(OnServerMessage);
     g_server->SetClientCallback(OnClientStatusChanged);
 
@@ -128,7 +129,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
    hInst = hInstance; // Store instance handle in our global variable
 
    HWND hWnd = CreateWindowW(szWindowClass, szTitle, WS_OVERLAPPEDWINDOW,
-      CW_USEDEFAULT, 0, 800, 600, nullptr, nullptr, hInstance, nullptr);
+      CW_USEDEFAULT, 0, 870, 500, nullptr, nullptr, hInstance, nullptr);
 
    if (!hWnd)
    {
@@ -272,7 +273,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 {
                     if (g_server->Start())
                     {
-                        AddLogMessage("Server started on port 8888");
+                        std::string msg = std::to_string(SERVER_PORT);
+                        AddLogMessage("Server started on port " + msg);
                         EnableWindow(hStartButton, FALSE);
                         EnableWindow(hStopButton, TRUE);
                     }

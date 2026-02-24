@@ -154,7 +154,11 @@ void UDPClient::Disconnect()
     // 发送断开连接消息
     if (isConnected_)
     {
-        Send("DISCONNECT");
+        auto disMsg = JSONMessage::CreateSendMsgByType(clientName_, JSONMessage::MessageType::DisConnect);
+        std::string strTemp = disMsg->ToJSON();
+        Send(strTemp);
+
+        //Send("DISCONNECT");
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
@@ -198,7 +202,11 @@ void UDPClient::Disconnect()
 bool UDPClient::EstablishConnection()
 {
     // 发送连接请求
-    std::string connectMsg = "CONNECT " + clientName_;
+    //std::string connectMsg = "CONNECT " + clientName_;
+
+    // send connect by json
+    auto ackMsg = JSONMessage::CreateSendMsgByType(clientName_, JSONMessage::MessageType::Connect);
+    std::string strTemp = ackMsg->ToJSON();
 
     waitingForAck_ = true;
     int attempts = 0;
@@ -206,10 +214,9 @@ bool UDPClient::EstablishConnection()
 
     while (attempts < maxAttempts && waitingForAck_ && isRunning_)
     {
-        if (!Send(connectMsg))
+        if (!Send(strTemp))
         {
-            std::cerr << "Failed to send connection request (attempt "
-                << attempts + 1 << ")" << std::endl;
+            std::cerr << "Failed to send connection request (attempt "<< attempts + 1 << ")" << std::endl;
         }
 
         attempts++;
@@ -226,7 +233,31 @@ bool UDPClient::EstablishConnection()
                 std::string msg = messages.front();
                 messages.pop();
 
-                if (msg.find("CONNECT_ACK") == 0)
+                /*if (msg.find("CONNECT_ACK") == 0)
+                {
+                    waitingForAck_ = false;
+                    isConnected_ = true;
+
+                    if (connectionCallback_)
+                    {
+                        connectionCallback_(true, "Connected successfully");
+                    }
+
+                    return true;
+                }*/
+
+                //
+                auto Jm = JSONMessage::FromJSON(msg);
+                if (Jm == nullptr)
+                {
+                    // 回调通知
+                    if (messageCallback_)
+                    {
+                        messageCallback_("Json Msg is null");
+                    }
+                    return false;
+                }
+                if (HandleReceivedMessage(*Jm))
                 {
                     waitingForAck_ = false;
                     isConnected_ = true;
@@ -387,6 +418,19 @@ void UDPClient::ProcessReceivedMessage(const std::string& message)
 {
     std::cout << "[Server] " << message << std::endl;
 
+    auto Jm = JSONMessage::FromJSON(message);
+    if (Jm == nullptr)
+    {
+        // 回调通知
+        if (messageCallback_)
+        {
+            messageCallback_("Json Msg is null");
+        }
+        return ;
+    }
+    HandleReceivedMessage(*Jm);
+
+    return;
     if (message.find("PONG") == 0)
     {
         HandlePong();
@@ -403,6 +447,38 @@ void UDPClient::ProcessReceivedMessage(const std::string& message)
         }
     }
     // 其他消息类型处理...
+}
+
+bool UDPClient::HandleReceivedMessage(const JSONMessage& msg)
+{
+    // 根据消息类型处理
+    switch (msg.GetType())
+    {
+    case JSONMessage::MessageType::Ack:
+    {
+        std::string strClient = msg.GetSenderId();
+        HandleConnectAck(strClient);
+    }
+    break;
+    case JSONMessage::MessageType::Heartbeat:
+    {
+        // 处理心跳响应
+        HandlePong();
+        break;
+    }
+
+    case JSONMessage::MessageType::DisConnect:
+    {
+        std::string strClient = msg.GetSenderId();
+
+        break;
+    }
+    default:
+        // 显示原始JSON
+        return false;
+        break;
+    }
+    return true;
 }
 
 void UDPClient::HandlePong()
@@ -478,12 +554,20 @@ bool UDPClient::Send(const std::string& message)
 bool UDPClient::SendChat(const std::string& message)
 {
     std::string chatMsg = "CHAT " + message;
+
+    auto ackMsg = JSONMessage::CreateSendMsgByType(clientName_, JSONMessage::MessageType::Location);
+    std::string strTemp = ackMsg->ToJSON();
+
     return Send(chatMsg);
 }
 
 void UDPClient::SendPing()
 {
-    Send("PING");
+    auto pingMsg = JSONMessage::CreateHeartbeat(clientName_);
+    std::string strTemp = pingMsg->ToJSON();
+
+    Send(strTemp);
+    //Send("PING");
 }
 
 std::queue<std::string> UDPClient::GetReceivedMessages()
