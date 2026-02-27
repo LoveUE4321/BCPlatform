@@ -98,6 +98,10 @@ public:
         const std::string& status,
         const std::map<std::string, json>& extra = {});
 
+    static std::shared_ptr<JSONMessage> CreateInfoUpdate(const std::string& senderId,
+        const std::string& status,
+        const std::map<std::string, json>& extra);
+
     static std::shared_ptr<JSONMessage> CreateCommand(
         const std::string& senderId,
         const std::string& command,

@@ -70,6 +70,12 @@
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <IncludePath>$(ProjectDir)\Public;$(IncludePath)</IncludePath>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <IncludePath>$(ProjectDir)\Public;$(IncludePath)</IncludePath>
+  </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
@@ -126,26 +132,27 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="BroadcastPlatform.h" />
-    <ClInclude Include="framework.h" />
-    <ClInclude Include="JsonMessage.h" />
-    <ClInclude Include="Resource.h" />
-    <ClInclude Include="targetver.h" />
-    <ClInclude Include="UDPConnect.h" />
-    <ClInclude Include="UDPServer.h" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClCompile Include="BroadcastPlatform.cpp" />
-    <ClCompile Include="JsonMessage.cpp" />
-    <ClCompile Include="UDPConnect.cpp" />
-    <ClCompile Include="UDPServer.cpp" />
-  </ItemGroup>
-  <ItemGroup>
     <ResourceCompile Include="BroadcastPlatform.rc" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="BroadcastPlatform.ico" />
     <Image Include="small.ico" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Public\BroadcastPlatform.h" />
+    <ClInclude Include="Public\framework.h" />
+    <ClInclude Include="Public\json.hpp" />
+    <ClInclude Include="Public\JsonMessage.h" />
+    <ClInclude Include="Public\Resource.h" />
+    <ClInclude Include="Public\targetver.h" />
+    <ClInclude Include="Public\UDPConnect.h" />
+    <ClInclude Include="Public\UDPServer.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="Private\BroadcastPlatform.cpp" />
+    <ClCompile Include="Private\JsonMessage.cpp" />
+    <ClCompile Include="Private\UDPConnect.cpp" />
+    <ClCompile Include="Private\UDPServer.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

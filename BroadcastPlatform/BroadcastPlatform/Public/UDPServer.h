@@ -24,10 +24,16 @@
 // 客户端信息结构
 struct ClientInfo
 {
-    std::string ip;
-    int port;
     std::chrono::system_clock::time_point lastActive;
+
+    std::string ip;
     std::string name;
+    std::string sn; // serial number
+    std::string progress; // game progress
+
+    int port;
+    int num;    // device number
+    int state;  // run state    
 };
 
 // 消息结构

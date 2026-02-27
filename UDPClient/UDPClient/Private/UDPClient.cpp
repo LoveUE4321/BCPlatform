@@ -208,6 +208,16 @@ bool UDPClient::EstablishConnection()
     auto ackMsg = JSONMessage::CreateSendMsgByType(clientName_, JSONMessage::MessageType::Connect);
     std::string strTemp = ackMsg->ToJSON();
 
+    json data;
+    data["Num"] = 2;
+    data["SN"] = 789456123;
+    data["state"] = 5;
+    data["progress"] = "1-2-3";
+    std::map<std::string, json> extra = { {"deviceInfo", data}};
+    auto stateMsg = JSONMessage::CreateInfoUpdate(clientName_, "Info", extra);
+    strTemp = stateMsg->ToJSON();
+
+
     waitingForAck_ = true;
     int attempts = 0;
     const int maxAttempts = 10;

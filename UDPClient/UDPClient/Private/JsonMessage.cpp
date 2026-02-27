@@ -157,6 +157,26 @@ std::shared_ptr<JSONMessage> JSONMessage::CreateStatusUpdate(const std::string& 
     return msg;
 }
 
+
+std::shared_ptr<JSONMessage> JSONMessage::CreateInfoUpdate(const std::string& senderId,
+    const std::string& status,
+    const std::map<std::string, json>& extra)
+{
+
+    auto msg = std::make_shared<JSONMessage>(MessageType::StatusUpdate, senderId);
+
+    json data;
+    //data["status"] = status;
+
+    for (const auto& [key, value] : extra) {
+        data[key] = value;
+    }
+
+    msg->m_data = data;
+    return msg;
+}
+
+
 std::shared_ptr<JSONMessage> JSONMessage::CreateCommand(const std::string& senderId,
     const std::string& command,
     const std::map<std::string, json>& params)

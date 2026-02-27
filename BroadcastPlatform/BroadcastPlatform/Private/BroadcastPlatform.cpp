@@ -32,15 +32,24 @@ BOOL                InitInstance(HINSTANCE, int);
 LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK    About(HWND, UINT, WPARAM, LPARAM);
 
+HFONT hFont;
+
 // UDP Server
 HWND hMainWnd;
 HWND hLogEdit;
 HWND hClientList;
-HWND hMessageEdit;
+HWND hRoomList;
+HWND hClientsEdit;
 HWND hSendButton;
 HWND hStartButton;
 HWND hStopButton;
 HWND hListBox;
+
+HWND g_hEdit;        // 嵌入的编辑框
+HWND g_hCombo;    // 嵌入的下拉框
+
+int g_editRow = -1;         // 当前编辑的行
+int g_editCol = -1;         // 当前编辑的列
 
 UDPServer* g_server = nullptr;
 void AddLogMessage(const std::string& message);
@@ -158,6 +167,20 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
    return TRUE;
 }
 
+void CreateWndFont(HWND hWnd)
+{
+    // 设置字体
+    if (hFont == nullptr)
+    {
+        hFont = CreateFont(14, 0, 0, 0, FW_NORMAL,
+            FALSE, FALSE, FALSE, DEFAULT_CHARSET,
+            OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+            DEFAULT_QUALITY, DEFAULT_PITCH | FF_DONTCARE,
+            TEXT("Consolas"));
+    }    
+
+    SendMessage(hWnd, WM_SETFONT, (WPARAM)hFont, TRUE);
+}
 // create output wnd
 void CreateTextView(HWND hWnd)
 {
@@ -166,7 +189,7 @@ void CreateTextView(HWND hWnd)
         WS_EX_CLIENTEDGE, L"EDIT", L"",
         WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_MULTILINE |
         ES_AUTOVSCROLL | ES_READONLY,
-        10, 340, 500, 100,
+        10, 360, 500, 100,
         hWnd, (HMENU)1001, hInst, nullptr
     );
 
@@ -177,12 +200,7 @@ void CreateTextView(HWND hWnd)
     SendMessage(hLogEdit, EM_REPLACESEL, 0, (LPARAM)logstr);
 
     // 设置字体
-    HFONT hFont = CreateFont(14, 0, 0, 0, FW_NORMAL,
-        FALSE, FALSE, FALSE, DEFAULT_CHARSET,
-        OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-        DEFAULT_QUALITY, DEFAULT_PITCH | FF_DONTCARE,
-        TEXT("Consolas"));
-    SendMessage(hLogEdit, WM_SETFONT, (WPARAM)hFont, TRUE);
+    CreateWndFont(hLogEdit);
 }
 
 // create listview
@@ -192,7 +210,7 @@ void CreateListView(HWND hWnd)
     hClientList = CreateWindowEx(
         WS_EX_CLIENTEDGE, WC_LISTVIEW, TEXT(""),
         WS_CHILD | WS_VISIBLE | WS_BORDER | LVS_REPORT | LVS_SINGLESEL,
-        10, 10, 500, 320,
+        10, 5, 500, 200,
         hWnd, (HMENU)1002, hInst, nullptr
     );
 
@@ -220,44 +238,130 @@ void CreateListView(HWND hWnd)
 
     lvc.cx = 50;
     lvc.iSubItem = 1;
-    lvc.fmt = LVCFMT_LEFT;
+    lvc.fmt = LVCFMT_CENTER;
     lvc.pszText = (LPWSTR)TEXT("设备号");
     ListView_InsertColumn(hClientList, 1, &lvc);
 
     lvc.cx = 80;
     lvc.iSubItem = 2;
-    lvc.fmt = LVCFMT_LEFT;
+    lvc.fmt = LVCFMT_CENTER;
     lvc.pszText = (LPWSTR)TEXT("设备SN");
     ListView_InsertColumn(hClientList, 2, &lvc);
 
     lvc.cx = 80;
     lvc.iSubItem = 3;
-    lvc.fmt = LVCFMT_LEFT;
+    lvc.fmt = LVCFMT_CENTER;
     lvc.pszText = (LPWSTR)TEXT("状态");
     ListView_InsertColumn(hClientList, 3, &lvc);
 
     lvc.cx = 80;
     lvc.iSubItem = 4;
-    lvc.fmt = LVCFMT_LEFT;
+    lvc.fmt = LVCFMT_CENTER;
     lvc.pszText = (LPWSTR)TEXT("进度");
     ListView_InsertColumn(hClientList, 4, &lvc);
 }
 
-// create combox
-void CreateCombox(HWND hWnd)
+
+// add room info to roomlist
+void AddRoomView(HWND hWnd)
 {
-    hListBox = CreateWindowExW(
+    //if (!g_server) return;
+
+    for (int i = 0; i < 5; ++i)
+    {
+        LVITEM lvi = {};
+        lvi.mask = LVIF_TEXT;
+        lvi.iItem = i;
+        lvi.iSubItem = 0;
+        lvi.pszText = (LPWSTR)TEXT("");
+        ListView_InsertItem(hRoomList, &lvi);
+
+        std::string id = std::to_string(i+1);
+        ListView_SetItemText(hRoomList, i, 0, (LPWSTR)id.c_str());
+
+        ListView_SetItemText(hRoomList, i, 1, (LPWSTR)TEXT("Num.1"));
+
+        ListView_SetItemText(hRoomList, i, 2, (LPWSTR)TEXT("Num.2"));
+
+        ListView_SetItemText(hRoomList, i, 3, (LPWSTR)TEXT("Online"));
+
+    }
+}
+
+// create room list 
+void CreateRoomList(HWND hWnd)
+{
+    // room list
+    hRoomList = CreateWindowEx(
+        WS_EX_CLIENTEDGE, WC_LISTVIEW, TEXT(""),
+        WS_CHILD | WS_VISIBLE | WS_BORDER | LVS_REPORT | LVS_SINGLESEL,
+        10, 210, 500, 150,
+        hWnd, (HMENU)1009, hInst, nullptr
+    );
+
+    // 设置扩展样式 - 关键部分：启用网格线
+    DWORD exStyle = 
+        LVS_EX_FULLROWSELECT |   // 整行选中
+        LVS_EX_GRIDLINES |        // 网格线（核心）
+        LVS_EX_DOUBLEBUFFER;      // 双缓冲防闪烁
+
+
+    ListView_SetExtendedListViewStyle(hRoomList, exStyle);
+
+    // 设置背景色
+    //ListView_SetBkColor(hRoomList, RGB(200, 200, 200));
+
+    // 设置列表视图列
+    LVCOLUMN lvc = { 0 };
+    lvc.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_SUBITEM | LVCF_FMT;
+
+    lvc.cx = 50;
+    lvc.iSubItem = 0;
+    lvc.fmt = LVCFMT_CENTER;
+    lvc.pszText = (LPWSTR)TEXT("房间");
+    ListView_InsertColumn(hRoomList, 0, &lvc);
+
+    lvc.cx = 80;
+    lvc.iSubItem = 1;
+    lvc.fmt = LVCFMT_CENTER;
+    lvc.pszText = (LPWSTR)TEXT("主机");
+    ListView_InsertColumn(hRoomList, 1, &lvc);
+
+    lvc.cx = 80;
+    lvc.iSubItem = 2;
+    lvc.fmt = LVCFMT_CENTER;
+    lvc.pszText = (LPWSTR)TEXT("从机");
+    ListView_InsertColumn(hRoomList, 2, &lvc);
+
+    lvc.cx = 80;
+    lvc.iSubItem = 3;
+    lvc.fmt = LVCFMT_CENTER;
+    lvc.pszText = (LPWSTR)TEXT("进度");
+    ListView_InsertColumn(hRoomList, 3, &lvc);
+
+    //
+    AddRoomView(hWnd);
+}
+
+// create combox
+void CreateCombox(HWND hWnd, int x, int y, int width, int height, const std::vector<std::wstring>& items)
+{
+    HWND hCombo = CreateWindowExW(
         0, L"COMBOBOX", L"DROPDOWNLIST",
         WS_CHILD | WS_VISIBLE | WS_VSCROLL | CBS_DROPDOWNLIST,
-        580, 60, 200, 400,
-        hWnd, (HMENU)1007, hInst, nullptr);
+        x, y, width, height,
+        hWnd, (HMENU)3007, hInst, nullptr);
 
-    wchar_t szText[] = L"列 0";
-    for (int nIndex = 0; nIndex < 8; nIndex++)
-    {	//添加项
-        LRESULT nItem = SendMessage(hListBox, CB_ADDSTRING, 0, (LPARAM)szText);
-        //szText[8]++;
+    // 添加项
+    for (const auto& item : items)
+    {
+        LRESULT nItem = SendMessage(hCombo, CB_ADDSTRING, 0, (LPARAM)item.c_str());
     }
+
+    // 默认选择第一项
+    SendMessage(hCombo, CB_SETCURSEL, 0, 0);
+
+    CreateWndFont(hCombo);
 }
 
 // create button 
@@ -267,7 +371,7 @@ void CreateButton(HWND hWnd)
     hStartButton = CreateWindowEx(
         0, TEXT("BUTTON"), TEXT("Start Server"),
         WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-        580, 10, 100, 30,
+        580, 310, 100, 30,
         hWnd, (HMENU)1005, hInst, nullptr
     );
 
@@ -275,13 +379,13 @@ void CreateButton(HWND hWnd)
     hStopButton = CreateWindowEx(
         0, TEXT("BUTTON"), TEXT("Stop Server"),
         WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-        700, 10, 100, 30,
+        700, 310, 100, 30,
         hWnd, (HMENU)1006, hInst, nullptr
     );
     EnableWindow(hStopButton, FALSE);
 
     // 消息输入框
-    /*hMessageEdit = CreateWindowEx(
+    /*hClientsEdit = CreateWindowEx(
         WS_EX_CLIENTEDGE, TEXT("EDIT"), TEXT(""),
         WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
         10, 320, 400, 25,
@@ -297,13 +401,149 @@ void CreateButton(HWND hWnd)
     );*/
 }
 
+
+// 创建嵌入的编辑框
+HWND CreateInPlaceEdit(HWND hwndParent, int x, int y, int width, int height, const wchar_t* text, int row, int col) 
+{
+    HWND hEdit = CreateWindowEx(
+        WS_EX_CLIENTEDGE,
+        TEXT("EDIT"), text,
+        WS_CHILD | WS_VISIBLE | WS_BORDER | ES_LEFT | ES_AUTOHSCROLL,
+        x, y, width, height,
+        hwndParent,
+        (HMENU)2003,
+        hInst,
+        NULL
+    );
+
+    CreateWndFont(hEdit);
+
+    // 保存编辑位置信息
+    SetWindowLongPtr(hEdit, GWLP_USERDATA, (LONG_PTR)MAKELONG(row, col));
+
+    return hEdit;
+}
+
+// 创建嵌入的下拉框
+HWND CreateInPlaceCombo(HWND hwndParent, int x, int y, int width, int height,
+    const std::vector<std::wstring>& items,
+    const wchar_t* currentText, int row, int col) 
+{
+    HWND hCombo = CreateWindowExW(
+        0,
+        (LPWSTR)"COMBOBOX",
+        NULL,
+        WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL | CBS_HASSTRINGS,
+        x, y, width, height,
+        hwndParent,
+        NULL,
+        GetModuleHandle(NULL),
+        NULL
+    );
+
+    // 添加下拉项
+    for (const auto& item : items) {
+        SendMessageW(hCombo, CB_ADDSTRING, 0, (LPARAM)item.c_str());
+    }
+
+    // 设置当前选中项
+    int index = SendMessageW(hCombo, CB_FINDSTRINGEXACT, -1, (LPARAM)currentText);
+    if (index != CB_ERR) {
+        SendMessageW(hCombo, CB_SETCURSEL, index, 0);
+    }
+
+    // 设置字体
+    HFONT hFont = CreateFontW(16, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
+        CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY,
+        DEFAULT_PITCH | FF_DONTCARE, (LPWSTR)"微软雅黑");
+    SendMessage(hCombo, WM_SETFONT, (WPARAM)hFont, TRUE);
+
+    // 保存下拉框位置信息
+    SetWindowLongPtr(hCombo, GWLP_USERDATA, (LONG_PTR)MAKELONG(row, col));
+
+    return hCombo;
+}
+
+// 获取单元格的屏幕位置
+BOOL GetCellRect(HWND hListView, int row, int col, RECT* rect) 
+{
+    // 获取行矩形
+    if (!ListView_GetItemRect(hListView, row, rect, LVIR_BOUNDS))
+    {
+        return FALSE;
+    }
+
+    // 调整到指定列
+    rect->left = 0;
+    for (int i = 1; i <= col; i++) {
+        rect->left += ListView_GetColumnWidth(hListView, i);
+    }
+    rect->right = rect->left + ListView_GetColumnWidth(hListView, col);
+
+    // 转换为屏幕坐标
+    POINT pt = { rect->left, rect->top };
+    ClientToScreen(hListView, &pt);
+    rect->left = pt.x;
+    rect->top = pt.y;
+    rect->right = pt.x + (rect->right - rect->left);
+    rect->bottom = pt.y + (rect->bottom - rect->top);
+
+    return TRUE;
+}
+
+// create 
+void CreateStaticText(HWND hWnd)
+{
+    HWND hTextRoom = CreateWindowExW(
+        0, L"static", L"房间",
+        WS_CHILD | WS_VISIBLE | WS_BORDER | SS_CENTER | SS_CENTERIMAGE,
+        520, 5, 70, 25,
+        hWnd, (HMENU)1007, hInst, nullptr);
+
+    HWND hTextHost = CreateWindowExW(
+        0, L"static", L"主机",
+        WS_CHILD | WS_VISIBLE | WS_BORDER | SS_CENTER | SS_CENTERIMAGE,
+        600, 5, 40, 25,
+        hWnd, (HMENU)1007, hInst, nullptr);
+
+    HWND hTextClients = CreateWindowExW(
+        0, L"static", L"从机",
+        WS_CHILD | WS_VISIBLE | WS_BORDER | SS_CENTER | SS_CENTERIMAGE,
+        650, 5, 40, 25,
+        hWnd, (HMENU)1007, hInst, nullptr);
+    
+    // add room list
+    std::vector<std::wstring> vRoomList = { TEXT("房间1"), TEXT("房间2"), TEXT("房间3"), TEXT("房间4"), TEXT("房间5") };
+    CreateCombox(hWnd, 520, 30, 70,200, vRoomList);
+
+    // add host list
+    std::vector<std::wstring> vHostList = { TEXT("1"), TEXT("2"), TEXT("3"), TEXT("4"), TEXT("5") };
+    CreateCombox(hWnd, 600, 30, 40, 200, vHostList);
+
+    // add client list input
+    hClientsEdit = CreateWindowEx(
+        WS_EX_CLIENTEDGE, TEXT("EDIT"), TEXT(""),
+        WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
+        650, 30, 100, 25,
+        hWnd, (HMENU)1003, hInst, nullptr);
+
+    // set font
+    CreateWndFont(hTextRoom);
+    CreateWndFont(hTextHost);
+    CreateWndFont(hTextClients);
+    CreateWndFont(hClientsEdit);
+}
 // 创建控件
 void CreateControls(HWND hWnd)
 {
     CreateTextView(hWnd);
     CreateListView(hWnd);
+    CreateRoomList(hWnd);
     CreateButton(hWnd);
-    CreateCombox(hWnd);
+    
+    //
+    CreateStaticText(hWnd);
 }
 
 //
@@ -339,7 +579,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 if (g_server && g_server->IsRunning())
                 {
                     char buffer[1024];
-                    GetWindowTextA(hMessageEdit, buffer, sizeof(buffer));
+                    GetWindowTextA(hClientsEdit, buffer, sizeof(buffer));
 
                     if (strlen(buffer) > 0)
                     {
@@ -348,7 +588,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
                         AddLogMessage("Broadcast: " + msg);
 
-                        SetWindowTextA(hMessageEdit, "");
+                        SetWindowTextA(hClientsEdit, "");
                     }
                 }
                 break;
@@ -441,8 +681,79 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             }
             }
         }
-        return 0;
+
+        //
+        if (((LPNMHDR)lParam)->hwndFrom == hRoomList)
+        {
+            switch (((LPNMHDR)lParam)->code)
+            {
+            case NM_CLICK:
+            {
+                // 处理点击事件，显示嵌入控件
+                LPNMITEMACTIVATE pnm = (LPNMITEMACTIVATE)lParam;
+                if (pnm->iItem != -1 && pnm->iSubItem >= 1)
+                {
+                    // 先销毁已有的控件
+                    if (g_hEdit) 
+                    {
+                        DestroyWindow(g_hEdit);
+                        g_hEdit = NULL;
+                    }
+                    if (g_hCombo)
+                    {
+                        DestroyWindow(g_hCombo);
+                        g_hCombo = NULL;
+                    }
+
+                    // 获取当前单元格文本
+                    wchar_t cellText[256];
+                    ListView_GetItemText(hRoomList, pnm->iItem, pnm->iSubItem, cellText, 256);
+
+                    // 获取单元格位置
+                    RECT cellRect;
+                    if (GetCellRect(hRoomList, pnm->iItem, pnm->iSubItem, &cellRect))
+                    {
+                        int cellWidth = cellRect.right - cellRect.left;
+                        int cellHeight = cellRect.bottom - cellRect.top;
+
+                        // 根据列类型创建不同的控件
+                        if (pnm->iSubItem == 3)
+                        { // 部门列：下拉框
+                            std::vector<std::wstring> depts = { (LPWSTR)"研发部", (LPWSTR)"市场部",
+                                                                (LPWSTR)"人事部", (LPWSTR)"财务部", (LPWSTR)"运维部" };
+                            g_hCombo = CreateInPlaceCombo(hWnd, cellRect.left, cellRect.top,
+                                cellWidth, cellHeight + 100,
+                                depts, cellText, pnm->iItem, pnm->iSubItem);
+                        }
+                        else if (pnm->iSubItem == 4) 
+                        { // 状态列：下拉框
+                            std::vector<std::wstring> statuses = { (LPWSTR)"在职", (LPWSTR)"休假",
+                                                                   (LPWSTR)"离职", (LPWSTR)"试用" };
+                            g_hCombo = CreateInPlaceCombo(hWnd, cellRect.left, cellRect.top,
+                                cellWidth, cellHeight + 80,
+                                statuses, cellText, pnm->iItem, pnm->iSubItem);
+                        }
+                        else
+                        { // 其他列：文本输入框
+                            g_hEdit = CreateInPlaceEdit(hWnd, cellRect.left, cellRect.top,
+                                cellWidth, cellHeight,
+                                cellText, pnm->iItem, pnm->iSubItem);
+                        }
+
+                        g_editRow = pnm->iItem;
+                        g_editCol = pnm->iSubItem;
+
+                        // 设置焦点
+                        if (g_hEdit) SetFocus(g_hEdit);
+                        if (g_hCombo) SetFocus(g_hCombo);
+                    }
+                }
+                break;
+            }
+            }
+        }
     }
+    break;
     default:
         return DefWindowProc(hWnd, message, wParam, lParam);
     }
