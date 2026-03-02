@@ -21,6 +21,15 @@
 
 #pragma comment(lib, "Ws2_32.lib")
 
+enum GameState
+{
+    GS_Idle,
+    GS_Create,
+    GS_Join,
+    GS_Playing,
+    GS_Logout,
+};
+
 // 客户端信息结构
 struct ClientInfo
 {
@@ -33,7 +42,7 @@ struct ClientInfo
 
     int port;
     int num;    // device number
-    int state;  // run state    
+    GameState state;  // run state    
 };
 
 // 消息结构
@@ -61,6 +70,9 @@ public:
     //bool Broadcast(const std::string& message);
     bool Broadcast(const std::string& message, const std::string& excludeIP = "", int excludePort = 0);
     bool UpdateClients(const std::string& name, const std::string& excludeIP, int excludePort );
+    
+    //
+    bool OnLaunchButton(wchar_t* roomName, std::vector<int> groupNums);
 
     // 获取信息
     std::vector<ClientInfo> GetConnectedClients() const;
@@ -92,17 +104,16 @@ private:
     void ProcessThreadFunc();
 
     // 消息处理
-    void ProcessMessage(const std::string& message,
-        const std::string& senderIP,
-        int senderPort);
+    void ProcessMessage(const std::string& message, const std::string& senderIP, int senderPort);
 
     void HandlePing(const std::string& senderIP, int senderPort);
-    void HandleConnect(const std::string& message, const std::string& senderIP, int senderPort);
+    void HandleConnect(const JSONMessage& msg, const std::string& senderIP, int senderPort);
     void HandleChat(const std::string& message, const std::string& senderIP, int senderPort);
     void HandleDisConnect(const std::string& message, const std::string& senderIP, int senderPort);
+    void HandleCreateRoom(const JSONMessage& msg, const std::string& senderIP, int senderPort);
 
     // 客户端管理
-    void AddClient(const std::string& ip, int port, const std::string& name = "");
+    void AddClient(const std::string& ip, int port, const JSONMessage& msg);
     void RemoveClient(const std::string name, const std::string& ip, int port);
     void UpdateClientActivity(const std::string& ip, int port);
     void RemoveInactiveClients(int timeoutSeconds = 30);

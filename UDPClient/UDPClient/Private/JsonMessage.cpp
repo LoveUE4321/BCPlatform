@@ -158,15 +158,13 @@ std::shared_ptr<JSONMessage> JSONMessage::CreateStatusUpdate(const std::string& 
 }
 
 
-std::shared_ptr<JSONMessage> JSONMessage::CreateInfoUpdate(const std::string& senderId,
-    const std::string& status,
+std::shared_ptr<JSONMessage> JSONMessage::CreateStatusUpdate(const std::string& senderId,
     const std::map<std::string, json>& extra)
 {
 
     auto msg = std::make_shared<JSONMessage>(MessageType::StatusUpdate, senderId);
 
     json data;
-    //data["status"] = status;
 
     for (const auto& [key, value] : extra) {
         data[key] = value;
@@ -206,6 +204,38 @@ std::shared_ptr<JSONMessage> JSONMessage::CreateSendMsgByType(
     const std::map<std::string, json>& extra)
 {
     auto msg = std::make_shared<JSONMessage>(type, senderId);
+    
+
+    if (!extra.empty())
+    {
+        json data;
+        
+        for (const auto& [key, value] : extra)
+        {
+            data[key] = value;
+        }
+        msg->m_data = data;
+    } 
+
+    return msg;
+}
+
+std::shared_ptr<JSONMessage> JSONMessage::CreateSendMsgByType(
+    const std::string& senderId,
+    MessageType type,
+    const json extra)
+{
+    auto msg = std::make_shared<JSONMessage>(type, senderId);
+
+    json data;
+
+    data["Num"] = 2;
+    data["SN"] = "789456123";
+    data["State"] = 5;
+    data["Progress"] = "1-2-3";
+
+    
+     msg->m_data = data;
 
     return msg;
 }

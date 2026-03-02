@@ -45,11 +45,18 @@ HWND hStartButton;
 HWND hStopButton;
 HWND hListBox;
 
+HWND hComboRoom;
+HWND hComboHost;
+HWND hComboClients;
+
 HWND g_hEdit;        // 嵌入的编辑框
 HWND g_hCombo;    // 嵌入的下拉框
 
 int g_editRow = -1;         // 当前编辑的行
 int g_editCol = -1;         // 当前编辑的列
+
+std::vector<int> g_HostIDList;
+std::vector<int> g_ClientIDList;
 
 UDPServer* g_server = nullptr;
 void AddLogMessage(const std::string& message);
@@ -259,6 +266,29 @@ void CreateListView(HWND hWnd)
     lvc.fmt = LVCFMT_CENTER;
     lvc.pszText = (LPWSTR)TEXT("进度");
     ListView_InsertColumn(hClientList, 4, &lvc);
+
+    g_HostIDList.clear();
+    for (int i = 0; i < 0; ++i)
+    {
+        LVITEM lvi = {};
+        lvi.mask = LVIF_TEXT;
+        lvi.iItem = i;
+        lvi.iSubItem = 0;
+        lvi.pszText = (LPWSTR)TEXT("");
+        ListView_InsertItem(hClientList, &lvi);
+
+        // id sn state prog
+        int id = i + 1;
+        std::string idStr = std::to_string(i + 1);
+        ListView_SetItemText(hClientList, i, 1, (LPWSTR)idStr.c_str());
+        ListView_SetItemText(hClientList, i, 2, (LPWSTR)TEXT("dfdfe23432"));
+        ListView_SetItemText(hClientList, i, 3, (LPWSTR)idStr.c_str());
+        ListView_SetItemText(hClientList, i, 4, (LPWSTR)TEXT("1-2-3"));
+
+        SendMessage(hComboHost, CB_ADDSTRING, 0, (LPARAM)idStr.c_str());
+        g_HostIDList.push_back(id);
+    }
+
 }
 
 
@@ -340,17 +370,17 @@ void CreateRoomList(HWND hWnd)
     ListView_InsertColumn(hRoomList, 3, &lvc);
 
     //
-    AddRoomView(hWnd);
+    //AddRoomView(hWnd);
 }
 
 // create combox
-void CreateCombox(HWND hWnd, int x, int y, int width, int height, const std::vector<std::wstring>& items)
+HWND CreateCombox(HWND hWnd, HMENU hMenu, int x, int y, int width, int height, const std::vector<std::wstring>& items, bool bDefault= false)
 {
     HWND hCombo = CreateWindowExW(
         0, L"COMBOBOX", L"DROPDOWNLIST",
         WS_CHILD | WS_VISIBLE | WS_VSCROLL | CBS_DROPDOWNLIST,
         x, y, width, height,
-        hWnd, (HMENU)3007, hInst, nullptr);
+        hWnd, hMenu, hInst, nullptr);
 
     // 添加项
     for (const auto& item : items)
@@ -359,9 +389,12 @@ void CreateCombox(HWND hWnd, int x, int y, int width, int height, const std::vec
     }
 
     // 默认选择第一项
-    SendMessage(hCombo, CB_SETCURSEL, 0, 0);
+    if(bDefault)
+        SendMessage(hCombo, CB_SETCURSEL, 0, 0);
 
     CreateWndFont(hCombo);
+
+    return hCombo;
 }
 
 // create button 
@@ -371,7 +404,7 @@ void CreateButton(HWND hWnd)
     hStartButton = CreateWindowEx(
         0, TEXT("BUTTON"), TEXT("Start Server"),
         WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-        580, 310, 100, 30,
+        520, 5, 100, 30,
         hWnd, (HMENU)1005, hInst, nullptr
     );
 
@@ -379,7 +412,7 @@ void CreateButton(HWND hWnd)
     hStopButton = CreateWindowEx(
         0, TEXT("BUTTON"), TEXT("Stop Server"),
         WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-        700, 310, 100, 30,
+        650, 5, 100, 30,
         hWnd, (HMENU)1006, hInst, nullptr
     );
     EnableWindow(hStopButton, FALSE);
@@ -447,7 +480,7 @@ HWND CreateInPlaceCombo(HWND hwndParent, int x, int y, int width, int height,
     }
 
     // 设置当前选中项
-    int index = SendMessageW(hCombo, CB_FINDSTRINGEXACT, -1, (LPARAM)currentText);
+    LRESULT index = SendMessageW(hCombo, CB_FINDSTRINGEXACT, -1, (LPARAM)currentText);
     if (index != CB_ERR) {
         SendMessageW(hCombo, CB_SETCURSEL, index, 0);
     }
@@ -495,55 +528,68 @@ BOOL GetCellRect(HWND hListView, int row, int col, RECT* rect)
 // create 
 void CreateStaticText(HWND hWnd)
 {
+    int top = 50;
     HWND hTextRoom = CreateWindowExW(
         0, L"static", L"房间",
         WS_CHILD | WS_VISIBLE | WS_BORDER | SS_CENTER | SS_CENTERIMAGE,
-        520, 5, 70, 25,
+        520, top, 70, 25,
         hWnd, (HMENU)1007, hInst, nullptr);
 
     HWND hTextHost = CreateWindowExW(
         0, L"static", L"主机",
         WS_CHILD | WS_VISIBLE | WS_BORDER | SS_CENTER | SS_CENTERIMAGE,
-        600, 5, 40, 25,
+        600, top, 50, 25,
         hWnd, (HMENU)1007, hInst, nullptr);
 
     HWND hTextClients = CreateWindowExW(
         0, L"static", L"从机",
         WS_CHILD | WS_VISIBLE | WS_BORDER | SS_CENTER | SS_CENTERIMAGE,
-        650, 5, 40, 25,
+        660, top, 50, 25,
         hWnd, (HMENU)1007, hInst, nullptr);
     
     // add room list
-    std::vector<std::wstring> vRoomList = { TEXT("房间1"), TEXT("房间2"), TEXT("房间3"), TEXT("房间4"), TEXT("房间5") };
-    CreateCombox(hWnd, 520, 30, 70,200, vRoomList);
+    std::vector<std::wstring> vRoomList = { TEXT("Room1"), TEXT("Room2"), TEXT("Room3"), TEXT("Room4"), TEXT("Room5") };
+    hComboRoom = CreateCombox(hWnd, (HMENU)3001, 520, top+25, 70, 200, vRoomList, true);
 
     // add host list
-    std::vector<std::wstring> vHostList = { TEXT("1"), TEXT("2"), TEXT("3"), TEXT("4"), TEXT("5") };
-    CreateCombox(hWnd, 600, 30, 40, 200, vHostList);
+    //std::vector<std::wstring> vHostList = { TEXT("1"), TEXT("2"), TEXT("3"), TEXT("4"), TEXT("5") };
+    std::vector<std::wstring> vHostList = {};
+    hComboHost = CreateCombox(hWnd, (HMENU)3002, 600, top + 25, 50, 200, vHostList);
 
     // add client list input
     hClientsEdit = CreateWindowEx(
         WS_EX_CLIENTEDGE, TEXT("EDIT"), TEXT(""),
-        WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
-        650, 30, 100, 25,
-        hWnd, (HMENU)1003, hInst, nullptr);
+        WS_CHILD | WS_VISIBLE | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY,
+        660, top + 25, 120, 25,
+        hWnd, (HMENU)2003, hInst, nullptr);
+
+    vHostList = {};
+    hComboClients = CreateCombox(hWnd, (HMENU)3003, 660, top + 50, 50, 100, vHostList);   
+
+    // add launch button
+    HWND btLaunch = CreateWindowEx(
+        0, TEXT("BUTTON"), TEXT("Launch"),
+        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+        785, top + 25, 60, 22,
+        hWnd, (HMENU)2005, hInst, nullptr);
 
     // set font
     CreateWndFont(hTextRoom);
-    CreateWndFont(hTextHost);
+    CreateWndFont(hTextHost);                            
     CreateWndFont(hTextClients);
     CreateWndFont(hClientsEdit);
+    CreateWndFont(btLaunch);
 }
 // 创建控件
 void CreateControls(HWND hWnd)
-{
+{               
+    //
+    CreateStaticText(hWnd);
     CreateTextView(hWnd);
     CreateListView(hWnd);
     CreateRoomList(hWnd);
     CreateButton(hWnd);
     
-    //
-    CreateStaticText(hWnd);
 }
 
 //
@@ -565,6 +611,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         break;
     case WM_COMMAND:
         {
+            int nNotifyCode = HIWORD(wParam);
             int wmId = LOWORD(wParam);
             // Parse the menu selections:
             switch (wmId)
@@ -618,7 +665,101 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     ListView_DeleteAllItems(hClientList);
                 }
                 break;
-            
+            case 2005:
+                if (g_server && g_server->IsRunning())
+                {
+                    wchar_t buffer[64];
+                    wchar_t rmName[64];
+                    std::vector<int> groupIDs;
+
+                    // get room name
+                    HWND curWnd = GetDlgItem(hWnd, 3001);
+                    GetWindowText(curWnd, rmName, sizeof(rmName)/sizeof(rmName[0]));
+                    //wchar_t* rmName = rmName;
+                    //AddLogMessage("Create Room :"+ std::string(buffer).c_str());
+
+                    // get host id
+                    curWnd = GetDlgItem(hWnd, 3002);
+                    GetWindowText(curWnd, buffer, sizeof(buffer) / sizeof(buffer[0]));
+
+                    int rmID = std::stoi(buffer);
+                    groupIDs.push_back(rmID);
+
+                    // get clients id
+                    curWnd = GetDlgItem(hWnd, 2003);
+                    GetWindowText(curWnd, buffer, sizeof(buffer) / sizeof(buffer[0]));
+                    
+                    char* s = (char*)buffer;
+                    std::istringstream iss(s);
+                    std::string token;
+
+                    while (std::getline(iss, token, '/'))
+                    {
+                        groupIDs.push_back(std::stoi(token));
+                    }
+
+                    g_server->OnLaunchButton(rmName, groupIDs);
+                }
+                break;
+            case 3001:
+                break;
+            case 3003:
+            {
+                HWND curWnd = GetDlgItem(hWnd, wmId);
+                switch (nNotifyCode)
+                {
+                case CBN_SELCHANGE:
+                    char buffer[32];
+                    GetWindowTextA(curWnd, buffer, sizeof(buffer));
+                    AddLogMessage("Add Client ID :" + std::string(buffer));
+
+                    int wideCharLength = MultiByteToWideChar(CP_UTF8, 0, buffer, -1, nullptr, 0);
+                    LPWSTR devNum = new WCHAR[wideCharLength];
+                    MultiByteToWideChar(CP_UTF8, 0, buffer, -1, devNum, wideCharLength);
+
+                    // 移动光标到末尾
+                    SendMessage(hClientsEdit, EM_SETSEL, -1, 0);
+                    // 插入文本（在光标处）
+                    SendMessage(hClientsEdit, EM_REPLACESEL, TRUE, (LPARAM)devNum);
+
+                    SendMessage(hClientsEdit, EM_SETSEL, -1, 0);
+                    SendMessage(hClientsEdit, EM_REPLACESEL, TRUE, (LPARAM)TEXT("/"));
+
+                    break;
+                }
+            }                
+                break;
+            case 3002:
+            {
+                HWND curWnd = GetDlgItem(hWnd, wmId);
+                switch (nNotifyCode)
+                {
+                case CBN_SELCHANGE:
+                    char buffer[32];
+                    GetWindowTextA(curWnd, buffer, sizeof(buffer));
+                    int id = atoi(buffer);
+                    AddLogMessage("Create Room :" + std::to_string(id));
+
+                    g_ClientIDList.clear();
+                    SendMessage(hComboClients, CB_RESETCONTENT, 0, 0);  // clear combo box
+
+                    for (auto value : g_HostIDList)
+                    {
+                        if (value != id)
+                        {
+                            g_ClientIDList.push_back(value);
+                        }
+                    }
+
+                    for (auto value : g_ClientIDList)
+                    {
+                        SendMessage(hComboClients, CB_ADDSTRING, 0, (LPARAM)std::to_string(value).c_str());
+                    }
+
+                    break;
+                }
+            }            
+                break;
             default:
                 return DefWindowProc(hWnd, message, wParam, lParam);
             }
@@ -680,78 +821,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 break;
             }
             }
-        }
-
-        //
-        if (((LPNMHDR)lParam)->hwndFrom == hRoomList)
-        {
-            switch (((LPNMHDR)lParam)->code)
-            {
-            case NM_CLICK:
-            {
-                // 处理点击事件，显示嵌入控件
-                LPNMITEMACTIVATE pnm = (LPNMITEMACTIVATE)lParam;
-                if (pnm->iItem != -1 && pnm->iSubItem >= 1)
-                {
-                    // 先销毁已有的控件
-                    if (g_hEdit) 
-                    {
-                        DestroyWindow(g_hEdit);
-                        g_hEdit = NULL;
-                    }
-                    if (g_hCombo)
-                    {
-                        DestroyWindow(g_hCombo);
-                        g_hCombo = NULL;
-                    }
-
-                    // 获取当前单元格文本
-                    wchar_t cellText[256];
-                    ListView_GetItemText(hRoomList, pnm->iItem, pnm->iSubItem, cellText, 256);
-
-                    // 获取单元格位置
-                    RECT cellRect;
-                    if (GetCellRect(hRoomList, pnm->iItem, pnm->iSubItem, &cellRect))
-                    {
-                        int cellWidth = cellRect.right - cellRect.left;
-                        int cellHeight = cellRect.bottom - cellRect.top;
-
-                        // 根据列类型创建不同的控件
-                        if (pnm->iSubItem == 3)
-                        { // 部门列：下拉框
-                            std::vector<std::wstring> depts = { (LPWSTR)"研发部", (LPWSTR)"市场部",
-                                                                (LPWSTR)"人事部", (LPWSTR)"财务部", (LPWSTR)"运维部" };
-                            g_hCombo = CreateInPlaceCombo(hWnd, cellRect.left, cellRect.top,
-                                cellWidth, cellHeight + 100,
-                                depts, cellText, pnm->iItem, pnm->iSubItem);
-                        }
-                        else if (pnm->iSubItem == 4) 
-                        { // 状态列：下拉框
-                            std::vector<std::wstring> statuses = { (LPWSTR)"在职", (LPWSTR)"休假",
-                                                                   (LPWSTR)"离职", (LPWSTR)"试用" };
-                            g_hCombo = CreateInPlaceCombo(hWnd, cellRect.left, cellRect.top,
-                                cellWidth, cellHeight + 80,
-                                statuses, cellText, pnm->iItem, pnm->iSubItem);
-                        }
-                        else
-                        { // 其他列：文本输入框
-                            g_hEdit = CreateInPlaceEdit(hWnd, cellRect.left, cellRect.top,
-                                cellWidth, cellHeight,
-                                cellText, pnm->iItem, pnm->iSubItem);
-                        }
-
-                        g_editRow = pnm->iItem;
-                        g_editCol = pnm->iSubItem;
-
-                        // 设置焦点
-                        if (g_hEdit) SetFocus(g_hEdit);
-                        if (g_hCombo) SetFocus(g_hCombo);
-                    }
-                }
-                break;
-            }
-            }
-        }
+        }       
     }
     break;
     default:
@@ -840,25 +910,32 @@ void UpdateClientList()
         lvi.pszText = (LPWSTR)TEXT("");
         ListView_InsertItem(hClientList, &lvi);
 
+        // id sn state prog
+        int wideCharLength = MultiByteToWideChar(CP_UTF8, 0, std::to_string(client.num).c_str(), -1, nullptr, 0);
+        LPWSTR devNum = new WCHAR[wideCharLength];
+        MultiByteToWideChar(CP_UTF8, 0, std::to_string(client.num).c_str(), -1, devNum, wideCharLength);
+        ListView_SetItemText(hClientList, index, 1, devNum);
 
-        int wideCharLength = MultiByteToWideChar(CP_UTF8, 0, client.ip.c_str(), -1, nullptr, 0);
-        LPWSTR clientIP = new WCHAR[wideCharLength];
-        MultiByteToWideChar(CP_UTF8, 0, client.ip.c_str(), -1, clientIP, wideCharLength);
+        wideCharLength = MultiByteToWideChar(CP_UTF8, 0, client.sn.c_str(), -1, nullptr, 0);
+        LPWSTR sn = new WCHAR[wideCharLength];
+        MultiByteToWideChar(CP_UTF8, 0, client.sn.c_str(), -1, sn, wideCharLength);
+        ListView_SetItemText(hClientList, index, 2, sn);
 
-        //lvi.pszText = clientIP;
-        ListView_SetItemText(hClientList, index, 1, clientIP);
+        wideCharLength = MultiByteToWideChar(CP_UTF8, 0, std::to_string(client.state).c_str(), -1, nullptr, 0);
+        LPWSTR state = new WCHAR[wideCharLength];
+        MultiByteToWideChar(CP_UTF8, 0, std::to_string(client.state).c_str(), -1, state, wideCharLength);
+        ListView_SetItemText(hClientList, index, 3, state);
 
-        wideCharLength = MultiByteToWideChar(CP_UTF8, 0, std::to_string(client.port).c_str(), -1, nullptr, 0);
-        LPWSTR clientPort = new WCHAR[wideCharLength];
-        MultiByteToWideChar(CP_UTF8, 0, std::to_string(client.port).c_str(), -1, clientPort, wideCharLength);
-        ListView_SetItemText(hClientList, index, 2, clientPort);
-
-        wideCharLength = MultiByteToWideChar(CP_UTF8, 0, client.name.c_str(), -1, nullptr, 0);
-        LPWSTR clientName = new WCHAR[wideCharLength];
-        MultiByteToWideChar(CP_UTF8, 0, client.name.c_str(), -1, clientName, wideCharLength);
-        ListView_SetItemText(hClientList, index, 3, clientName);
+        wideCharLength = MultiByteToWideChar(CP_UTF8, 0, client.progress.c_str(), -1, nullptr, 0);
+        LPWSTR prog = new WCHAR[wideCharLength];
+        MultiByteToWideChar(CP_UTF8, 0, client.progress.c_str(), -1, prog, wideCharLength);
+        ListView_SetItemText(hClientList, index, 4, prog);
 
         index++;
+
+        // update host combo
+        SendMessage(hComboHost, CB_ADDSTRING, 0, (LPARAM)std::to_string(client.num).c_str());
+        g_HostIDList.push_back(client.num);
     }
 }
 
@@ -931,7 +1008,6 @@ void GetCheckedSummary(HWND hListView, wchar_t* buffer, size_t bufferSize)
     }
 
     wchar_t temp[1024] = L"已选中: ";
-    wchar_t itemText[100];
     int itemCount = ListView_GetItemCount(hListView);
     int first = 1;
 

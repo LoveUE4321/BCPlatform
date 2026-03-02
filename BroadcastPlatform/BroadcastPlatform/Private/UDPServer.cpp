@@ -269,7 +269,7 @@ void UDPServer::ProcessMessage(const std::string& message, const std::string& se
     }
     else if (message.find("CONNECT") == 0)
     {
-        HandleConnect(message, senderIP, senderPort);
+        HandleConnect(*Jm, senderIP, senderPort);
     }
     else if (message.find("CHAT") == 0)
     {
@@ -312,16 +312,16 @@ void UDPServer::HandlePing(const std::string& senderIP, int senderPort)
     SendToClient(senderIP, senderPort, strTemp);
 }
 
-void UDPServer::HandleConnect(const std::string& name, const std::string& senderIP, int senderPort)
+void UDPServer::HandleConnect(const JSONMessage& msg, const std::string& senderIP, int senderPort)
 {
     // 提取客户端名称
-    std::string clientName = name;
-    if (name.length() ==0)
+    std::string clientName = msg.GetSenderId();
+    if (clientName.length() ==0)
     {
         clientName = "Unknown";
     }
 
-    AddClient(senderIP, senderPort, clientName);
+    AddClient(senderIP, senderPort, msg);
 
     // 发送欢迎消息
     //std::string welcomeMsg = "ACK:" + clientName + std::to_string(senderPort);
@@ -382,6 +382,20 @@ void UDPServer::HandleDisConnect(const std::string& name, const std::string& sen
     {
         clientCallback_(senderIP, senderPort, false);
     }
+}
+
+void UDPServer::HandleCreateRoom(const JSONMessage& msg, const std::string& senderIP, int senderPort)
+{
+    std::string clientName = msg.GetSenderId();
+    if (clientName.length() == 0)
+    {
+        clientName = "Unknown";
+    }
+
+
+    auto ackMsg = JSONMessage::CreateSendMsgByType(clientName, JSONMessage::MessageType::Ack);
+    std::string strTemp = ackMsg->ToJSON();
+    SendToClient(senderIP, senderPort, strTemp);
 }
 
 bool UDPServer::SendToClient(const std::string& ip, int port, const std::string& message)
@@ -460,17 +474,31 @@ bool UDPServer::UpdateClients(const std::string& name, const std::string& exclud
     return success;
 }
 
-void UDPServer::AddClient(const std::string& ip, int port, const std::string& name)
+void UDPServer::AddClient(const std::string& ip, int port, const JSONMessage& msg)
 {
     std::lock_guard<std::mutex> lock(clientsMutex_);
-
     std::string key = GetClientKey(ip, port);
+    std::string name = msg.GetSenderId();
 
+    int devNum = -1;
+    devNum = msg.GetData("Num", devNum);
+    int state = -1;
+    state = msg.GetData("State", state);
+    std::string sn;
+    sn = msg.GetData("SN", sn);
+    std::string prog;
+    prog = msg.GetData("Progress", prog);
+    
     ClientInfo client;
     client.ip = ip;
     client.port = port;
     client.name = name.empty() ? "Client_" + std::to_string(port) : name;
     client.lastActive = std::chrono::system_clock::now();
+
+    client.sn = sn;
+    client.num = devNum;
+    client.state = (GameState)state;
+    client.progress = prog;
 
     clients_[key] = client;
 }
@@ -579,8 +607,7 @@ void UDPServer::handleReceivedMessage(const JSONMessage& msg, const std::string&
     {
     case JSONMessage::MessageType::Connect:
     {
-        std::string strClient = msg.GetSenderId();
-        HandleConnect(strClient, senderIp, senderPort);
+        HandleConnect(msg, senderIp, senderPort);
     }
         break;
     case JSONMessage::MessageType::Location:
@@ -609,4 +636,38 @@ void UDPServer::handleReceivedMessage(const JSONMessage& msg, const std::string&
         // 显示原始JSON
         break;
     }
+}
+
+bool UDPServer::OnLaunchButton(wchar_t* roomName, std::vector<int> groupNums)
+{
+    if (serverSocket_ == INVALID_SOCKET) return false;
+
+    std::lock_guard<std::mutex> lock(clientsMutex_);
+
+    bool success = true;
+    for (const auto& pair : clients_)
+    {
+        const ClientInfo& client = pair.second;
+        if (groupNums[0]==client.num)
+        {
+            json data;
+            data["Num"] = client.num;
+            data["SN"] = client.sn;
+            data["State"] = GameState::GS_Create;
+            data["Room"] = roomName;
+
+            auto joinMsg = JSONMessage::CreateSendMsgByType(client.name, JSONMessage::MessageType::StatusUpdate, data);
+
+            std::string strTemp = joinMsg->ToJSON();
+            if (!SendToClient(client.ip, client.port, strTemp))
+            {
+                success = false;
+            }
+
+            break;
+        }       
+    }
+
+    return success;
+    return true;
 }

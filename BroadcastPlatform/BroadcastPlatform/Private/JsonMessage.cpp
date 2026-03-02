@@ -5,7 +5,6 @@
 #include <iomanip>
 #include <winsock2.h>
 
-
 JSONMessage::JSONMessage()
     : m_type(MessageType::Custom)
     , m_timestamp(std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -157,6 +156,23 @@ std::shared_ptr<JSONMessage> JSONMessage::CreateStatusUpdate(const std::string& 
     return msg;
 }
 
+
+std::shared_ptr<JSONMessage> JSONMessage::CreateStatusUpdate(const std::string& senderId,
+    const std::map<std::string, json>& extra)
+{
+    auto msg = std::make_shared<JSONMessage>(MessageType::StatusUpdate, senderId);
+
+    json data;
+
+    for (const auto& [key, value] : extra) {
+        data[key] = value;
+    }
+
+    msg->m_data = data;
+    return msg;
+}
+
+
 std::shared_ptr<JSONMessage> JSONMessage::CreateCommand(const std::string& senderId,
     const std::string& command,
     const std::map<std::string, json>& params)
@@ -186,6 +202,39 @@ std::shared_ptr<JSONMessage> JSONMessage::CreateSendMsgByType(
     const std::map<std::string, json>& extra)
 {
     auto msg = std::make_shared<JSONMessage>(type, senderId);
+
+    json data;
+
+    if (!extra.empty())
+    {
+        for (const auto& [key, value] : extra)
+        {
+            data[key] = value;
+        }
+        msg->m_data = data;
+    }
+    return msg;
+}
+
+std::shared_ptr<JSONMessage> JSONMessage::CreateSendMsgByType(
+    const std::string& senderId,
+    MessageType type,
+    const json data)
+{
+    auto msg = std::make_shared<JSONMessage>(type, senderId);
+    
+    //json data;
+    //data["Num"] = num;
+    //data["SN"] = sn;
+    //data["State"] = state;
+
+    //int size_needed = WideCharToMultiByte(CP_UTF8, 0, name, -1, nullptr, 0, nullptr, nullptr);
+    //std::string result(size_needed - 1, 0);
+    //WideCharToMultiByte(CP_UTF8, 0, name, -1, &result[0], size_needed, nullptr, nullptr);
+
+    //data["Room"] = name;
+
+    msg->m_data = data;
 
     return msg;
 }

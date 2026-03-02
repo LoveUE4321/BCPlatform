@@ -98,6 +98,9 @@ public:
         const std::string& status,
         const std::map<std::string, json>& extra = {});
 
+    static std::shared_ptr<JSONMessage> CreateStatusUpdate(const std::string& senderId,
+        const std::map<std::string, json>& extra);
+
     static std::shared_ptr<JSONMessage> CreateCommand(
         const std::string& senderId,
         const std::string& command,
@@ -107,6 +110,12 @@ public:
         const std::string& senderId,
         MessageType type,
         const std::map<std::string, json>& extra = {});
+
+    static std::shared_ptr<JSONMessage> CreateSendMsgByType(
+        const std::string& senderId,
+        MessageType type,
+        const json data);
+
 
 private:
     MessageType m_type;
