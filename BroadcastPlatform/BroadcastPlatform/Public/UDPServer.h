@@ -45,6 +45,14 @@ struct ClientInfo
     GameState state;  // run state    
 };
 
+struct RoomInfo
+{
+    std::string roomName;
+    int hostDevNum;
+    std::vector<int> clientsDevNum;
+    std::string progress;
+};
+
 // 消息结构
 struct UDPMessage
 {
@@ -69,7 +77,7 @@ public:
     bool SendToClient(const std::string& ip, int port, const std::string& message);
     //bool Broadcast(const std::string& message);
     bool Broadcast(const std::string& message, const std::string& excludeIP = "", int excludePort = 0);
-    bool UpdateClients(const std::string& name, const std::string& excludeIP, int excludePort );
+    bool UpdateToClients(const std::string& name, const std::string& excludeIP, int excludePort );
     
     //
     bool OnLaunchButton(wchar_t* roomName, std::vector<int> groupNums);
@@ -78,15 +86,16 @@ public:
     std::vector<ClientInfo> GetConnectedClients() const;
     int GetClientCount() const;
     std::queue<UDPMessage> GetReceivedMessages();
+    std::vector<RoomInfo> GetRoomInfos() const;
 
     // 回调函数类型
-    using MessageCallback = std::function<void(const std::string& message,
-        const std::string& senderIP,
-        int senderPort)>;
+    using MessageCallback = std::function<void(const std::string& message, const std::string& senderIP, int senderPort)>;
     using ClientCallback = std::function<void(const std::string& ip, int port, bool connected)>;
+    using RoomInfoCallback = std::function<void()>;
 
     void SetMessageCallback(MessageCallback callback) { messageCallback_ = callback; }
     void SetClientCallback(ClientCallback callback) { clientCallback_ = callback; }
+    void SetRoomInfoCallback(RoomInfoCallback callback) { rmInfoCallback_ = callback; }
 
     // 发送JSON消息
     void sendJSONMessage(const JSONMessage& msg);
@@ -109,15 +118,18 @@ private:
     void HandlePing(const std::string& senderIP, int senderPort);
     void HandleConnect(const JSONMessage& msg, const std::string& senderIP, int senderPort);
     void HandleChat(const std::string& message, const std::string& senderIP, int senderPort);
-    void HandleDisConnect(const std::string& message, const std::string& senderIP, int senderPort);
+    void HandleDisConnect(const JSONMessage& msg, const std::string& senderIP, int senderPort);
     void HandleCreateRoom(const JSONMessage& msg, const std::string& senderIP, int senderPort);
 
     // 客户端管理
     void AddClient(const std::string& ip, int port, const JSONMessage& msg);
+    void UpdateClient(const std::string& ip, int port, const JSONMessage& msg);
     void RemoveClient(const std::string name, const std::string& ip, int port);
     void UpdateClientActivity(const std::string& ip, int port);
     void RemoveInactiveClients(int timeoutSeconds = 30);
     std::string GetClientKey(const std::string& ip, int port) const;
+
+    void UpdateRoomInfo(std::string rmName, int devNum);
 
 private:
     // Socket相关
@@ -132,6 +144,9 @@ private:
 
     // 客户端管理
     std::map<std::string, ClientInfo> clients_;
+    std::map<int,std::string> clientList;
+    std::map<std::string, RoomInfo> roomInfos;
+    std::vector<int> clientNums;
     mutable std::mutex clientsMutex_;
 
     // 消息队列
@@ -142,6 +157,7 @@ private:
     // 回调函数
     MessageCallback messageCallback_ = nullptr;
     ClientCallback clientCallback_ = nullptr;
+    RoomInfoCallback rmInfoCallback_ = nullptr;
 
     // 缓冲区
     static const int BUFFER_SIZE = 65536;

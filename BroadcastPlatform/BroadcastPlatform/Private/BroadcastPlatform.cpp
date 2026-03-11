@@ -67,6 +67,7 @@ void OnServerMessage(const std::string& message,
     int senderPort);
 void OnClientStatusChanged(const std::string& ip, int port, bool connected);
 void GetCheckedSummary(HWND hListView, wchar_t* buffer, size_t bufferSize);
+void OnRoomInfoMessage();
 
 
 int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
@@ -100,6 +101,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     g_server = new UDPServer(SERVER_PORT);
     g_server->SetMessageCallback(OnServerMessage);
     g_server->SetClientCallback(OnClientStatusChanged);
+    g_server->SetRoomInfoCallback(OnRoomInfoMessage);
 
     HACCEL hAccelTable = LoadAccelerators(hInstance, MAKEINTRESOURCE(IDC_BROADCASTPLATFORM));
 
@@ -663,6 +665,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
                     // 清空客户端列表
                     ListView_DeleteAllItems(hClientList);
+                    ListView_DeleteAllItems(hRoomList);
                 }
                 break;
             case 2005:
@@ -742,6 +745,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
                     g_ClientIDList.clear();
                     SendMessage(hComboClients, CB_RESETCONTENT, 0, 0);  // clear combo box
+                    SetWindowTextA(hClientsEdit, "");                               // clear client edit
 
                     for (auto value : g_HostIDList)
                     {
@@ -753,7 +757,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
                     for (auto value : g_ClientIDList)
                     {
-                        SendMessage(hComboClients, CB_ADDSTRING, 0, (LPARAM)std::to_string(value).c_str());
+                        int wideCharLength = MultiByteToWideChar(CP_UTF8, 0, std::to_string(value).c_str(), -1, nullptr, 0);
+                        LPWSTR devNum = new WCHAR[wideCharLength];
+                        MultiByteToWideChar(CP_UTF8, 0, std::to_string(value).c_str(), -1, devNum, wideCharLength);
+
+                        SendMessage(hComboClients, CB_ADDSTRING, 0, (LPARAM)devNum);
                     }
 
                     break;
@@ -896,6 +904,11 @@ void UpdateClientList()
 
     ListView_DeleteAllItems(hClientList);
 
+    // clear host combo
+    g_HostIDList.clear();
+    SendMessage(hComboHost, CB_RESETCONTENT, 0, 0);  // clear combo box
+
+
     auto clients = g_server->GetConnectedClients();
     int index = 0;
 
@@ -934,11 +947,62 @@ void UpdateClientList()
         index++;
 
         // update host combo
-        SendMessage(hComboHost, CB_ADDSTRING, 0, (LPARAM)std::to_string(client.num).c_str());
+        SendMessage(hComboHost, CB_ADDSTRING, 0, (LPARAM)devNum);
         g_HostIDList.push_back(client.num);
     }
 }
 
+void UpdateRoomInfoList()
+{
+    if (!g_server) return;
+    ListView_DeleteAllItems(hRoomList);
+
+    auto clients = g_server->GetRoomInfos();
+    int index = 0;
+    for (const auto& client : clients)
+    {
+        LVITEM lvi = {};
+        lvi.mask = LVIF_TEXT;
+        lvi.iItem = index;
+        lvi.iSubItem = 0;
+        lvi.pszText = (LPWSTR)TEXT("");
+        ListView_InsertItem(hRoomList, &lvi);
+
+        // id sn state prog
+        int wideCharLength = MultiByteToWideChar(CP_UTF8, 0, client.roomName.c_str(), -1, nullptr, 0);
+        LPWSTR devNum = new WCHAR[wideCharLength];
+        MultiByteToWideChar(CP_UTF8, 0, client.roomName.c_str(), -1, devNum, wideCharLength);
+        ListView_SetItemText(hRoomList, index, 0, devNum);
+
+        wideCharLength = MultiByteToWideChar(CP_UTF8, 0, std::to_string(client.hostDevNum).c_str(), -1, nullptr, 0);
+        LPWSTR sn = new WCHAR[wideCharLength];
+        MultiByteToWideChar(CP_UTF8, 0, std::to_string(client.hostDevNum).c_str(), -1, sn, wideCharLength);
+        ListView_SetItemText(hRoomList, index, 1, sn);
+
+        //
+        std::string clientNums;
+        for (auto num : client.clientsDevNum)
+        {
+            std::string id = std::to_string(num);
+            clientNums.append(id);
+            clientNums.append(",");
+        }
+        wideCharLength = MultiByteToWideChar(CP_UTF8, 0, clientNums.c_str(), -1, nullptr, 0);
+        LPWSTR state = new WCHAR[wideCharLength];
+        MultiByteToWideChar(CP_UTF8, 0, clientNums.c_str(), -1, state, wideCharLength);
+        ListView_SetItemText(hRoomList, index, 2, state);
+
+        wideCharLength = MultiByteToWideChar(CP_UTF8, 0, client.progress.c_str(), -1, nullptr, 0);
+        LPWSTR prog = new WCHAR[wideCharLength];
+        MultiByteToWideChar(CP_UTF8, 0, client.progress.c_str(), -1, prog, wideCharLength);
+        ListView_SetItemText(hRoomList, index, 3, prog);
+
+        index++;
+    }
+
+}
+
+// callback func.
 void OnServerMessage(const std::string& message,
     const std::string& senderIP,
     int senderPort)
@@ -958,6 +1022,10 @@ void OnClientStatusChanged(const std::string& ip, int port, bool connected)
     UpdateClientList();
 }
 
+void OnRoomInfoMessage()
+{
+    UpdateRoomInfoList();
+}
 // ========== 复选框操作函数 ==========
 
 // 获取指定行的复选框状态

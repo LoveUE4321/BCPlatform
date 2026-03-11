@@ -138,6 +138,8 @@ void UDPServer::Stop()
     {
         std::lock_guard<std::mutex> lock(clientsMutex_);
         clients_.clear();
+        clientList.clear();
+        roomInfos.clear();
     }
 
     std::cout << "UDP Server stopped" << std::endl;
@@ -336,16 +338,16 @@ void UDPServer::HandleConnect(const JSONMessage& msg, const std::string& senderI
     auto joinMsg = JSONMessage::CreateSendMsgByType(clientName, JSONMessage::MessageType::Join);
     strTemp = joinMsg->ToJSON();
     Broadcast(strTemp, senderIP, senderPort);
-
+                                                                                                                                                                                                
     // Update Other Clients
-    UpdateClients(clientName, senderIP, senderPort);
+    UpdateToClients(clientName, senderIP, senderPort);
 
     // 回调通知
     if (clientCallback_)
     {
         clientCallback_(senderIP, senderPort, true);
     }
-
+                                                                                                                                                                       
     std::cout << clientName << " connected from " << senderIP << ":" << senderPort << std::endl;
 }
 
@@ -370,17 +372,33 @@ void UDPServer::HandleChat(const std::string& message, const std::string& sender
     Broadcast(broadcastMsg);
 }
 
-void UDPServer::HandleDisConnect(const std::string& name, const std::string& senderIP, int senderPort)
+void UDPServer::HandleDisConnect(const JSONMessage& msg, const std::string& senderIP, int senderPort)
 {
+    std::string name = msg.GetSenderId();
+
     // broadcast client disconnect
     auto joinMsg = JSONMessage::CreateSendMsgByType(name, JSONMessage::MessageType::DisConnect);
     std::string strTemp = joinMsg->ToJSON();
     Broadcast(strTemp, senderIP, senderPort);
 
+    //
     RemoveClient(name, senderIP, senderPort);
+
+    // room info
+    int devNum = -1;
+    devNum = msg.GetData("Num", devNum);
+    std::string rmName;
+    rmName = msg.GetData("Room", rmName);
+    UpdateRoomInfo(rmName, devNum);
+
     if (clientCallback_)
     {
         clientCallback_(senderIP, senderPort, false);
+    }
+
+    if (rmInfoCallback_)
+    {
+        rmInfoCallback_();
     }
 }
 
@@ -448,7 +466,7 @@ bool UDPServer::Broadcast(const std::string& message, const std::string& exclude
     return success;
 }
 
-bool UDPServer::UpdateClients(const std::string& name, const std::string& excludeIP, int excludePort)
+bool UDPServer::UpdateToClients(const std::string& name, const std::string& excludeIP, int excludePort)
 {
     if (serverSocket_ == INVALID_SOCKET) return false;
 
@@ -488,6 +506,9 @@ void UDPServer::AddClient(const std::string& ip, int port, const JSONMessage& ms
     sn = msg.GetData("SN", sn);
     std::string prog;
     prog = msg.GetData("Progress", prog);
+
+    // add to client list
+    clientList[devNum] = sn;
     
     ClientInfo client;
     client.ip = ip;
@@ -503,11 +524,78 @@ void UDPServer::AddClient(const std::string& ip, int port, const JSONMessage& ms
     clients_[key] = client;
 }
 
+void UDPServer::UpdateClient(const std::string& ip, int port, const JSONMessage& msg)
+{
+    std::lock_guard<std::mutex> lock(clientsMutex_);
+    std::string key = GetClientKey(ip, port);
+    std::string name = msg.GetSenderId();
+
+    int devNum = -1;
+    devNum = msg.GetData("Num", devNum);
+    int state = -1;
+    state = msg.GetData("State", state);
+    std::string sn;
+    sn = msg.GetData("SN", sn);
+    std::string prog;
+    prog = msg.GetData("Progress", prog);
+    std::string room;
+    room = msg.GetData("Room", room);
+
+    // update client info
+    ClientInfo client;
+    client.ip = ip;
+    client.port = port;
+    client.name = name.empty() ? "Client_" + std::to_string(port) : name;
+    client.lastActive = std::chrono::system_clock::now();
+
+    client.sn = sn;
+    client.num = devNum;
+    client.state = (GameState)state;
+    client.progress = prog;
+
+    clients_[key] = client;
+
+    // add room info
+    std::string rmKey = room;
+
+    RoomInfo rmInfo;
+    auto info = roomInfos.find(rmKey);
+    if (info != roomInfos.end())
+    {
+        rmInfo.roomName = info->second.roomName;
+        rmInfo.hostDevNum = info->second.hostDevNum;
+        rmInfo.progress = info->second.progress;
+
+        //
+        rmInfo.clientsDevNum.push_back(devNum);
+    }
+    else
+    {
+        rmInfo.roomName = room;
+        rmInfo.hostDevNum = devNum;
+        rmInfo.progress = prog;
+    }        
+
+    roomInfos[rmKey] = rmInfo;
+
+    if (clientCallback_)
+    {
+        clientCallback_(ip, port, true);
+    }
+
+    if (rmInfoCallback_)
+    {
+        rmInfoCallback_();
+    }
+}
+
 void UDPServer::RemoveClient(const std::string name, const std::string& ip, int port)
 {
     std::lock_guard<std::mutex> lock(clientsMutex_);
 
     std::string key = GetClientKey(ip, port);
+    
+    clientList.erase(clients_[key].num);
     clients_.erase(key);
 }
 
@@ -532,30 +620,35 @@ void UDPServer::RemoveInactiveClients(int timeoutSeconds)
 
     for (const auto& pair : clients_)
     {
-        auto duration = std::chrono::duration_cast<std::chrono::seconds>(
-            now - pair.second.lastActive);
+        auto duration = std::chrono::duration_cast<std::chrono::seconds>(now - pair.second.lastActive);
 
         if (duration.count() > timeoutSeconds)
         {
             toRemove.push_back(pair.first);
 
-            std::cout << "Client " << pair.second.name << " ("
-                << pair.second.ip << ":" << pair.second.port
-                << ") timed out" << std::endl;
-
-            messageCallback_("Remove Inactive Client: ", pair.second.ip, pair.second.port);
-
-            if (clientCallback_)
-            {
-                clientCallback_(pair.second.ip, pair.second.port, false);
-            }
+            //std::cout << "Client " << pair.second.name << " ("<< pair.second.ip << ":" << pair.second.port << ") timed out" << std::endl;
+            //messageCallback_("Remove Inactive Client: ", pair.second.ip, pair.second.port);
+            //if (clientCallback_)
+            //{
+            //    clientCallback_(pair.second.ip, pair.second.port, false);
+            //}
 
         }
     }
 
     for (const auto& key : toRemove)
     {
+        std::string ip = clients_[key].ip;
+        int port = clients_[key].port;
+        std::cout << "Client " << clients_[key].name << " (" << ip << ":" << port << ") timed out" << std::endl;
+        messageCallback_("Remove Inactive Client: ", ip, port);
+
+        clientList.erase(clients_[key].num);
         clients_.erase(key);
+        if (clientCallback_)
+        {
+            clientCallback_(ip, port, false);
+        }
     }
 }
 
@@ -566,7 +659,7 @@ std::string UDPServer::GetClientKey(const std::string& ip, int port) const
 
 std::vector<ClientInfo> UDPServer::GetConnectedClients() const
 {
-    std::lock_guard<std::mutex> lock(clientsMutex_);
+    //std::lock_guard<std::mutex> lock(clientsMutex_);
 
     std::vector<ClientInfo> result;
     for (const auto& pair : clients_)
@@ -576,6 +669,18 @@ std::vector<ClientInfo> UDPServer::GetConnectedClients() const
 
     return result;
 }
+
+std::vector<RoomInfo> UDPServer::GetRoomInfos() const
+{
+    std::vector<RoomInfo> result;
+    for (const auto& pair : roomInfos)
+    {
+        result.push_back(pair.second);
+    }
+
+    return result;
+}
+
 
 int UDPServer::GetClientCount() const
 {
@@ -626,12 +731,66 @@ void UDPServer::handleReceivedMessage(const JSONMessage& msg, const std::string&
 
     case JSONMessage::MessageType::DisConnect:
     {
-        std::string strClient = msg.GetSenderId();
-        HandleDisConnect(strClient, senderIp, senderPort);
-
+        HandleDisConnect(msg, senderIp, senderPort);
         
         break;
+    } 
+    case JSONMessage::MessageType::StatusUpdate:      
+    {
+        int devNum;
+        devNum = msg.GetData("Num", devNum);
+        GameState state;
+        state = (GameState)msg.GetData("State", state);
+        std::string rmName;
+        rmName = msg.GetData("Room", rmName);
+
+        switch (state)
+        {
+        case GameState::GS_Create:
+        {
+            int index = 0;
+            for (const auto& pair : clients_)
+            {
+                const ClientInfo& client = pair.second;
+                if (clientNums[0] == client.num)
+                {
+                    index++;
+                    UpdateClient(client.ip, client.port, msg);
+                    continue;
+                }
+
+                json data;
+                data["Num"] = clientNums[index];
+                data["SN"] = clientList[clientNums[index]];
+                data["State"] = GameState::GS_Join;
+                data["Room"] = rmName;
+
+                std::string clientName = msg.GetSenderId();
+                auto joinMsg = JSONMessage::CreateSendMsgByType(clientName, JSONMessage::MessageType::StatusUpdate, data);
+
+                std::string strTemp = joinMsg->ToJSON();
+                if (!SendToClient(client.ip, client.port, strTemp))
+                {
+                }
+                index++;
+            }
+        }            
+            break;
+
+        case GameState::GS_Join:
+            for (const auto& pair : clients_)
+            {
+                const ClientInfo& client = pair.second;
+                if (devNum == client.num)
+                {
+                    UpdateClient(client.ip, client.port, msg);
+                    break;
+                }
+            }
+            break;
+        }
     }
+        break;                                                                                                        
     default:
         // 显示原始JSON
         break;
@@ -643,6 +802,8 @@ bool UDPServer::OnLaunchButton(wchar_t* roomName, std::vector<int> groupNums)
     if (serverSocket_ == INVALID_SOCKET) return false;
 
     std::lock_guard<std::mutex> lock(clientsMutex_);
+
+    clientNums = groupNums;
 
     bool success = true;
     for (const auto& pair : clients_)
@@ -669,5 +830,24 @@ bool UDPServer::OnLaunchButton(wchar_t* roomName, std::vector<int> groupNums)
     }
 
     return success;
-    return true;
+}
+
+void UDPServer::UpdateRoomInfo(std::string rmName, int devNum)
+{
+    auto info = roomInfos.find(rmName);
+    if (info != roomInfos.end())
+    {
+        if (info->second.hostDevNum == devNum)
+        {
+            roomInfos.erase(info);
+        }
+        else
+        {
+            auto it = std::find(info->second.clientsDevNum.begin(), info->second.clientsDevNum.end(), devNum);
+            if (it != info->second.clientsDevNum.end())
+            {
+                info->second.clientsDevNum.erase(it);
+            }
+        }
+    }
 }
